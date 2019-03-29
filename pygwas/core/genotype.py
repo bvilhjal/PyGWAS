@@ -1,8 +1,6 @@
 import logging
 import kinship
 import bisect
-import itertools as iter
-import phenotype
 import data_parsers
 import h5py
 import numpy
@@ -136,7 +134,7 @@ class AbstractGenotype(object):
         # group by chr for efficient sequentielly iteration over snps generator
         it_ix = 0
         filtered_chr_pos_ix = [[],[]]
-        for chr,positions in iter.groupby(chr_pos_ix[0],lambda x:x[0]):
+        for chr,positions in itertools.groupby(chr_pos_ix[0],lambda x:x[0]):
             pos_indices = []
             it = self.get_snps_iterator(chr)
             for position in positions:
@@ -151,7 +149,7 @@ class AbstractGenotype(object):
                 it_ix+=1
             for i,ix in enumerate(pos_indices):
                 previous_ix = 0 if i == 0 else pos_indices[i-1] +1
-                snps.append(next(iter.islice(it,ix-previous_ix,None),None))
+                snps.append(next(itertools.islice(it,ix-previous_ix,None),None))
         return (map(list,zip(*sorted(zip(filtered_chr_pos_ix[1],indices))))[1],map(list,zip(*sorted(zip(filtered_chr_pos_ix[1],snps))))[1])
 
 
@@ -237,9 +235,9 @@ class AbstractGenotype(object):
     def convert_data_format(self,target_format='binary'):
         pass
 
-    def coordinate_w_phenotype_data(self, phenotype, coord_phen=True):
+    def coordinate_w_phenotype_data(self, phenotype, coord_phen=True, min_mac=1):
         """
-        Deletes accessions which are not common, and sorts the accessions, removes monomorphic SNPs, etc.
+        Deletes accessions which are not common, and sorts the accessions, removes SNPs with low MACs, etc.
         """
         log.debug("Coordinating SNP and Phenotype data.")
         ets = phenotype.ecotypes
@@ -260,11 +258,11 @@ class AbstractGenotype(object):
             (total_num,removed_num) = self.filter_non_binary()
             log.debug('Removed %d non-binary SNPs out of %d SNPs' % (removed_num, total_num))
         elif self.data_format in ['int', 'diploid_int']:
-            log.debug('Filtering monomorhpic SNPs')
+            log.debug('Filtering SNPs w min mac < %d'%min_mac)
             total_num = 0
             removed_num = 0
-            (total_num,removed_num) = self.filter_monomorphic_snps()
-            log.debug('Removed %d monomorphic SNPs out of %d SNPs' % (removed_num, total_num))
+            (total_num,removed_num) = self.filter_mac_snps(min_mac)
+            log.debug('Removed %d SNPs out of %d SNPs' % (removed_num, total_num))
         return {'pd_indices_to_keep':pd_indices_to_keep, 'n_filtered_snps':removed_num}
 
     def get_ibs_kinship_matrix(self, debug_filter=1, snp_dtype='int8', dtype='single',chunk_size=None):
@@ -279,7 +277,7 @@ class AbstractGenotype(object):
 
     def get_ibd_kinship_matrix(self, debug_filter=1, dtype='single',chunk_size=None):
         log.debug('Starting IBD calculation')
-        return kinship.calc_ibd_kinship(self,chunk_size=chunk_size)
+        cov_mat = kinship.calc_ibd_kinship(self,chunk_size=chunk_size)
         log.debug('Finished calculating IBD kinship matrix')
         return cov_mat
 
@@ -333,13 +331,35 @@ class AbstractGenotype(object):
         snps_ix = []
         num_snps = self.num_snps
         for i,snps in enumerate(self.get_snps_iterator()):
-            bc = numpy.unique(snps)
             if len(numpy.unique(snps)) <= 1:
                 snps_ix.append(i)
         numRemoved = len(snps_ix)
         self.filter_snps_ix(snps_ix)
         log.info("Removed %d monomoprhic SNPs, leaving %d SNPs in total." % (numRemoved, num_snps))
         return (num_snps,numRemoved)
+
+    def filter_mac_snps(self, min_mac=10):
+        """
+        Removes SNPs from the data which are have low macs.
+        """
+        snps_ix = []
+        num_snps = self.num_snps
+        for i,snp in enumerate(self.get_snps_iterator()):
+            if self.data_format in ['binary', 'int']:
+                l = scipy.bincount(snp)
+                mac = l.min()
+            elif self.data_format == 'diploid_int':
+                bin_counts = scipy.bincount(snp, minlength=3)
+                l = scipy.array([bin_counts[0], bin_counts[2]]) + bin_counts[1] / 2.0
+                mac = l.min()
+            else:
+                mac=0
+            if mac < min_mac:
+                snps_ix.append(i)
+        numRemoved = len(snps_ix)
+        self.filter_snps_ix(snps_ix)
+        log.info("Removed %d SNPs with mac below %d, out of %d SNPs in total." % (numRemoved, min_mac, num_snps))
+        return (num_snps, numRemoved)
 
 
     def filter_non_binary(self):
@@ -419,8 +439,8 @@ class Genotype(AbstractGenotype):
         return self.chr_regions[-1][0]
 
     def filter_snps_ix(self,snps_ix):
-        self._snps = snps[snps_ix]
-        self._positions = snps[snps_ix]
+        self._snps = self.snps[snps_ix]
+        self._positions = self.positions[snps_ix]
 
     def get_snps_iterator(self,chr=None,is_chunked=False,chunk_size=1000):
         start = 0
@@ -515,7 +535,6 @@ class Genotype(AbstractGenotype):
         """
         num_accessions  = len(self.accessions)
         newAccessions = []
-        newArrayIds = []
         for i in indicesToKeep:
             newAccessions.append(self.accessions[i])
         for i in range(len(self.snps)):
@@ -671,6 +690,19 @@ class HDF5Genotype(AbstractGenotype):
         return filtered_chr_regions
 
 
+    def filter_accessions(self,accession_ids):
+        sd_indices_to_keep = set()
+        pd_indices_to_keep = []
+        for i, acc in enumerate(self.accessions):
+            for j, et in enumerate(accession_ids):
+                if str(et) == str(acc):
+                    sd_indices_to_keep.add(i)
+                    pd_indices_to_keep.append(j)
+
+        sd_indices_to_keep = list(sd_indices_to_keep)
+        sd_indices_to_keep.sort()
+        self.filter_accessions_ix(sd_indices_to_keep)
+        return sd_indices_to_keep,pd_indices_to_keep
 
 
 

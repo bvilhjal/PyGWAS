@@ -255,7 +255,6 @@ def emmax_step(phen_vals, genotype, K, cof_chr_pos_list, eig_L=None, eig_R=None,
         eig_R = lmm._get_eigen_R_()
         log.debug('Done')
 
-
     log.debug('Getting variance components estimates')
     reml_dict = lmm.get_REML(eig_L=eig_L, eig_R=eig_R)
     ml_dict = lmm.get_ML(eig_L=eig_L, eig_R=eig_R)

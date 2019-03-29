@@ -130,10 +130,7 @@ class Phenotype(object):
         return {'pseudo_heritability':r1['pseudo_heritability'], 'pval':pval, 'u_blup':u_mean_pred, 'blup_residuals':blup_residuals}
 
     def has_replicates(self):
-        ets = map(int, self.ecotypes)
-        num_vals = len(ets)
-        num_ets = len(set(ets))
-        return num_vals != num_ets
+        return len(self.ecotypes) != len(set(self.ecotypes))
 
     # TODO move to linear_models
     def get_broad_sense_heritability(self):
@@ -489,7 +486,7 @@ class Phenotype(object):
         else:
             return True
 
-def parse_phenotype_file(file_name, delim=','):
+def parse_phenotype_file(file_name,column_num=1, delim=','):
     import csv
     """
     Parses a phenotype file, and returns a new phenotype_data object.
@@ -501,10 +498,10 @@ def parse_phenotype_file(file_name, delim=','):
         ets = []
         values = []
         header = reader.next()
-        name = header[1]
+        name = header[column_num]
         for row in reader:
             try:
-                values.append(float(row[1]))
+                values.append(float(row[column_num]))
                 ets.append(row[0].strip())
             except ValueError:
                 log.warning('could not parse row %s' %row)

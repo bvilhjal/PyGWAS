@@ -497,13 +497,13 @@ def _get_chr_regions(chrs):
 
     return chr_regions,grouped_chr
 
-def _prepare_data_(genotypeData, phenData,transformation=None):
+def _prepare_data_(genotypeData, phenData,transformation=None, min_mac=1):
     """
     Coordinates phenotype and snps data for different mapping methods.
     """
     log.info('Converting replicates of phenotypes to averages')
     phenData.convert_to_averages()
-    d = genotypeData.coordinate_w_phenotype_data(phenData)
+    d = genotypeData.coordinate_w_phenotype_data(phenData, min_mac=min_mac)
     phenData.transform(transformation)
     return d['n_filtered_snps']
 

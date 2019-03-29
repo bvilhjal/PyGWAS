@@ -63,7 +63,7 @@ nt_int_decoder = {'A':1,
           '|':0}
 
 
-def parse_genotype_csv_file(csv_file,format='binary', missingVal='NA'):
+def parse_genotype_csv_file(csv_file, format='binary'):
     log.info('Parsing Genotype file (CSV) %s in format %s' % (csv_file, format))
     retval ={}
 
@@ -74,7 +74,6 @@ def parse_genotype_csv_file(csv_file,format='binary', missingVal='NA'):
         header = reader.next()
         if header[0] != 'Chromosome' or (header[1] != 'Positions' and header[1] != 'Position'): 
             raise Exception('First two columns must be in form  Chromosome, Positions')
-        dtype = _get_dtype_from_format(format)
         accessions = map(lambda x: x.strip(),header[2:])
         log.info('%s accessions found %s' % (len(accessions),accessions))
         first_line = reader.next()
@@ -86,16 +85,16 @@ def parse_genotype_csv_file(csv_file,format='binary', missingVal='NA'):
         data = []
         retval = {'format':format,"accessions":accessions}
         for row in reader:
-            chr = row[0]
-            if chr != old_chr: #Then save snps_data
+            chrom = row[0]
+            if chrom != old_chr: #Then save snps_data
                 log.info('Chromosome %s finished. %s SNPs found' % (old_chr,len(snps)))
                 data.append({'snps':snps,'positions':positions,'chr':old_chr})
                 positions = []
                 snps = []
-                old_chr = chr
+                old_chr = chrom
             positions.append(int(row[1]))
             snps.append(_get_snps_from_row(format,row[2:]))
-        data.append({'snps':snps,'positions':positions,'chr':chr})
+        data.append({'snps':snps,'positions':positions,'chr':chrom})
     retval['data'] = data
     log.info('Finished parsing Genotype file')
     return retval     
